@@ -82,6 +82,8 @@ func (m *ParallelBatcher) outputLoop() {
 
 		var flushBatch bool
 		select {
+
+		//step 3.2.6 订阅ParallelWrapper产生的每一条消息
 		case tran, open := <-m.child.TransactionChan():
 			if !open {
 				// Final flush of remaining documents.
@@ -97,14 +99,17 @@ func (m *ParallelBatcher) outputLoop() {
 				}
 			} else {
 				tran.Payload.Iter(func(i int, p types.Part) error {
+					//step 3.2.7 将消息放到批量缓存区，如添加消息后满足flush的条件，则设置flushBatch = true
 					if m.batcher.Add(p) {
 						flushBatch = true
 					}
 					return nil
 				})
+				//step 3.2.8 消息未达到批量刷新条件，则放到等待队列
 				pendingResChans = append(pendingResChans, tran.ResponseChan)
 			}
 		case <-nextTimedBatchChan:
+			//step 3.2.9 达到刷新时间间隔，触发flush
 			flushBatch = true
 			nextTimedBatchChan = nil
 		case <-m.closeChan:
@@ -115,6 +120,7 @@ func (m *ParallelBatcher) outputLoop() {
 			continue
 		}
 
+		//step 3.2.10 开始flush，批量输出消息
 		sendMsg := m.batcher.Flush()
 		if sendMsg == nil {
 			continue
@@ -122,11 +128,13 @@ func (m *ParallelBatcher) outputLoop() {
 
 		resChan := make(chan types.Response)
 		select {
+		//step 3.2.11 将消息放到buffer输出管道messagesOut，messagesOut产生的消息会被processor消费（-->>step 3.3.2）
 		case m.messagesOut <- types.NewTransaction(sendMsg, resChan):
 		case <-m.closeChan:
 			return
 		}
 
+		//step 3.2.12异步监听消息处理结果，给每一条消息设置一个response。 （用于给input（kafka、file）环节实现ACK功能）
 		go func(rChan chan types.Response, upstreamResChans []chan<- types.Response) {
 			select {
 			case <-m.closeChan:
@@ -150,9 +158,13 @@ func (m *ParallelBatcher) outputLoop() {
 
 // Consume assigns a messages channel for the output to read.
 func (m *ParallelBatcher) Consume(msgs <-chan types.Transaction) error {
+
+	//step 3.2.1 先由ParallelWrapper 异步缓冲输入、输出每一条消息
 	if err := m.child.Consume(msgs); err != nil {
 		return err
 	}
+
+	//step 3.2.5 通过NewParallelBatcher批量输出消息
 	go m.outputLoop()
 	return nil
 }

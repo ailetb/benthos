@@ -88,10 +88,14 @@ func NewFile(conf Config, mgr types.Manager, log log.Modular, stats metrics.Type
 	if len(conf.File.Delim) > 0 {
 		conf.File.Codec = "delim:" + conf.File.Delim
 	}
+
+	//step 2.1.3.1 创建文件操作reder：只提供文件打开、读文件的行为
 	rdr, err := newFileConsumer(conf.File, log)
 	if err != nil {
 		return nil, err
 	}
+
+	//step 3.1 创建文件异步reader：监听并持续读取文件、ACK处理、生产消息放到消息管道等
 	return NewAsyncReader(TypeFile, true, reader.NewAsyncPreserver(rdr), log, stats)
 }
 
@@ -155,6 +159,7 @@ func (f *fileConsumer) ConnectWithContext(ctx context.Context) error {
 	}
 
 	if f.scanner, err = f.scannerCtor(nextPath, file, func(ctx context.Context, err error) error {
+		//step 3.1.8 file组件自定义的ACK回调
 		if err == nil && f.delete {
 			return os.Remove(nextPath)
 		}

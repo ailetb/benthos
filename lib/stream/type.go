@@ -44,9 +44,13 @@ func New(conf Config, opts ...func(*Type)) (*Type, error) {
 		manager: types.NoopMgr(),
 		onClose: func() {},
 	}
+
+	//step 1.8.1  设置logger 、stats 、manager配置
 	for _, opt := range opts {
 		opt(t)
 	}
+
+	//step 1.8.2 开始初始化并启动各模块
 	if err := t.start(); err != nil {
 		return nil, err
 	}
@@ -134,6 +138,8 @@ func (t *Type) IsReady() bool {
 }
 
 func (t *Type) start() (err error) {
+
+	//step 2.1 初始化并启动input
 	// Constructors
 	if t.inputLayer, err = input.New(
 		t.conf.Input, t.manager,
@@ -141,6 +147,8 @@ func (t *Type) start() (err error) {
 	); err != nil {
 		return
 	}
+
+	//step 2.2 初始化buffer （以Memory为例）
 	if t.conf.Buffer.Type != buffer.TypeNone {
 		if t.bufferLayer, err = buffer.New(
 			t.conf.Buffer, t.manager,
@@ -149,6 +157,8 @@ func (t *Type) start() (err error) {
 			return
 		}
 	}
+
+	//step 2.3 初始化pipeline processor
 	if tLen := len(t.complementaryProcs) + len(t.conf.Pipeline.Processors); tLen > 0 {
 		if t.pipelineLayer, err = pipeline.New(
 			t.conf.Pipeline, t.manager,
@@ -158,6 +168,8 @@ func (t *Type) start() (err error) {
 			return
 		}
 	}
+
+	//step 2.4 初始化output
 	if t.outputLayer, err = output.New(
 		t.conf.Output, t.manager,
 		t.logger.NewModule(".output"), metrics.Namespaced(t.stats, "output"),
@@ -169,18 +181,24 @@ func (t *Type) start() (err error) {
 	var nextTranChan <-chan types.Transaction
 
 	nextTranChan = t.inputLayer.TransactionChan()
+
+	//step 3.2 启动buffer (以Memory为例)
 	if t.bufferLayer != nil {
 		if err = t.bufferLayer.Consume(nextTranChan); err != nil {
 			return
 		}
 		nextTranChan = t.bufferLayer.TransactionChan()
 	}
+
+	//step 3.3 启动processor
 	if t.pipelineLayer != nil {
 		if err = t.pipelineLayer.Consume(nextTranChan); err != nil {
 			return
 		}
 		nextTranChan = t.pipelineLayer.TransactionChan()
 	}
+
+	//step 3.4 启动output （以file为例）
 	if err = t.outputLayer.Consume(nextTranChan); err != nil {
 		return
 	}

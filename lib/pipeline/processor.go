@@ -73,6 +73,7 @@ func (p *Processor) loop() {
 	for atomic.LoadInt32(&p.running) == 1 {
 		var tran types.Transaction
 		select {
+		//step 3.3.2 监听并获取buffer生产的消息
 		case tran, open = <-p.messagesIn:
 			if !open {
 				return
@@ -81,6 +82,7 @@ func (p *Processor) loop() {
 			return
 		}
 
+		//step 3.3.3 遍历所有的处理器，处理改消息
 		resultMsgs, resultRes := processor.ExecuteAll(p.msgProcessors, tran.Payload)
 		if len(resultMsgs) == 0 {
 			if resultRes == nil {
@@ -95,6 +97,7 @@ func (p *Processor) loop() {
 			continue
 		}
 
+		//step 3.3.4 消息分发，最终将处理的消息放到messagesOut管道
 		if len(resultMsgs) > 1 {
 			p.dispatchMessages(resultMsgs, tran.ResponseChan)
 		} else {
@@ -181,6 +184,8 @@ func (p *Processor) Consume(msgs <-chan types.Transaction) error {
 	if p.messagesIn != nil {
 		return types.ErrAlreadyStarted
 	}
+
+	//step 3.3.1 processor订阅来自msgs管道的消息
 	p.messagesIn = msgs
 	go p.loop()
 	return nil

@@ -113,6 +113,7 @@ func (m *ParallelWrapper) inputLoop() {
 		var tr types.Transaction
 		var open bool
 		select {
+		//step 3.2.3.1 监听input产生的消息
 		case tr, open = <-m.messagesIn:
 			if !open {
 				return
@@ -120,6 +121,8 @@ func (m *ParallelWrapper) inputLoop() {
 		case <-m.stopConsumingChan:
 			return
 		}
+
+		//step 3.2.3.2 将消息缓存到本地内存
 		backlog, err := m.buffer.PushMessage(tracing.WithSiblingSpans("buffer_"+m.conf.Type, tr.Payload))
 		if err == nil {
 			mWriteCount.Incr(1)
@@ -215,6 +218,8 @@ func (m *ParallelWrapper) outputLoop() {
 	)
 
 	for atomic.LoadInt32(&m.running) == 1 {
+
+		//step 3.2.4.1从缓冲区消费消息
 		msg, ackFunc, err := m.buffer.NextMessage()
 		if err != nil {
 			if err != types.ErrTypeClosed {
@@ -236,11 +241,13 @@ func (m *ParallelWrapper) outputLoop() {
 
 		resChan := make(chan types.Response)
 		select {
+		//step 3.2.4.2 将从缓冲区消息放到 messagesOut 管道，messagesOut的消息管道不会被processor订阅，而是最终被ParallelBatcher消费
 		case m.messagesOut <- types.NewTransaction(msg, resChan):
 		case <-m.closeChan:
 			return
 		}
 
+		//step 3.2.4.3 根据处理结果，释放缓冲区内存
 		go func(rChan chan types.Response, aFunc parallel.AckFunc) {
 			res, open := <-rChan
 			doAck := false
@@ -270,10 +277,15 @@ func (m *ParallelWrapper) Consume(msgs <-chan types.Transaction) error {
 	if m.messagesIn != nil {
 		return types.ErrAlreadyStarted
 	}
-	m.messagesIn = msgs
 
+	//step 3.2.2 订阅来自messagesIn管道的消息，该消息由input产生
+	m.messagesIn = msgs
 	m.closedWG.Add(2)
+
+	//step 3.2.3 消费messagesIn管道的消息，并放入buffer
 	go m.inputLoop()
+
+	//step 3.2.4 消费buffer的消息，将消息放到messagesOut管道。（messagesOut的消息管道不会被processor订阅，而是最终被ParallelBatcher消费）
 	go m.outputLoop()
 	go func() {
 		m.closedWG.Wait()

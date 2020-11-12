@@ -70,6 +70,7 @@ func NewAsyncReader(
 
 	rdr.connThrot = throttle.New(throttle.OptCloseChan(ctx.Done()))
 
+	//step 3.1.1 for循环不断读取和处理消息
 	go rdr.loop()
 	return rdr, nil
 }
@@ -111,6 +112,8 @@ func (r *AsyncReader) loop() {
 	}()
 
 	for {
+
+		//step 3.1.2 创建连接
 		if err := r.reader.ConnectWithContext(r.ctx); err != nil {
 			if err == types.ErrTypeClosed {
 				return
@@ -128,7 +131,9 @@ func (r *AsyncReader) loop() {
 	mConn.Incr(1)
 	atomic.StoreInt32(&r.connected, 1)
 
+	//step 3.1.3 不断读取消息
 	for atomic.LoadInt32(&r.running) == 1 {
+
 		msg, ackFn, err := r.reader.ReadWithContext(r.ctx)
 
 		// If our reader says it is not connected.
@@ -182,12 +187,18 @@ func (r *AsyncReader) loop() {
 		resChan := make(chan types.Response)
 		tracing.InitSpans("input_"+r.typeStr, msg)
 		select {
+
+		//step 3.1.4 将读取的消息，放到消息管道transactions，该消息管道的消息将会被buffer订阅（-->>step 3.2.3.1）
 		case r.transactions <- types.NewTransaction(msg, resChan):
 		case <-r.ctx.Done():
 			return
 		}
 
 		pendingAcks.Add(1)
+
+		//step 3.1.5 异步等待处理结果，并触发ack回调。
+		// 成功：由output返回最终的处理结果 (由step 3.4.4，返回结果)
+		// 失败： buffer->processor->output 中任何一个环节都会返回处理结果
 		go func(
 			m types.Message,
 			aFn reader.AsyncAckFn,
@@ -218,6 +229,8 @@ func (r *AsyncReader) loop() {
 			}
 			mLatency.Timing(time.Since(m.CreatedAt()).Nanoseconds())
 			tracing.FinishSpans(m)
+
+			//step 3.1.6 触发Ack回调
 			if err = aFn(r.fullyCloseCtx, res); err != nil {
 				r.log.Errorf("Failed to acknowledge message: %v\n", err)
 			}

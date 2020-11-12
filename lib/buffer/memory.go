@@ -87,14 +87,20 @@ func NewMemoryConfig() MemoryConfig {
 
 // NewMemory creates a buffer held in memory.
 func NewMemory(config Config, mgr types.Manager, log log.Modular, stats metrics.Type) (Type, error) {
+
+	//step 2.2.1 创建缓存器，该缓存器只支持每次生产或消费1条数据
 	wrap := NewParallelWrapper(config, parallel.NewMemory(config.Memory.Limit), log, stats)
 	if !config.Memory.BatchPolicy.Enabled {
 		return wrap, nil
 	}
+
+	//step 2.2.2 创建批量flush消息的策略
 	pol, err := batch.NewPolicy(config.Memory.BatchPolicy.PolicyConfig, mgr, log, stats)
 	if err != nil {
 		return nil, fmt.Errorf("batch policy config error: %v", err)
 	}
+
+	//step 2.2.2 创建能够批量flush消息的批量缓存器
 	return NewParallelBatcher(pol, wrap, log, stats), nil
 }
 

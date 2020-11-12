@@ -343,6 +343,8 @@ func New(
 	stats metrics.Type,
 	pipelines ...types.PipelineConstructorFunc,
 ) (Type, error) {
+
+	//step 2.4.1 创建所有的processor component，并组装成pipeline.NewProcessor
 	if len(conf.Processors) > 0 {
 		pipelines = append(pipelines, []types.PipelineConstructorFunc{func(i *int) (types.Pipeline, error) {
 			if i == nil {
@@ -362,16 +364,36 @@ func New(
 			return pipeline.NewProcessor(log, stats, processors...), nil
 		}}...)
 	}
+
 	if c, ok := Constructors[conf.Type]; ok {
+
+		//step 2.4.2 创建broker类型的output，聚合多个output
+		/*
+			output:
+			  broker:
+				pattern: fan_out
+				outputs:
+				  - resource: foo
+				  - resource: bar
+					# Processors only applied to messages sent to bar.
+					processors:
+					  - resource: bar_processor
+		*/
 		if c.brokerConstructor != nil {
 			return c.brokerConstructor(conf, mgr, log, stats, pipelines...)
 		}
+
+		//step 2.4.3 创建常规output
 		output, err := c.constructor(conf, mgr, log, stats)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create output '%v': %v", conf.Type, err)
 		}
+
+		//step 2.4.4 使用管道组装output及所有的processor
 		return WrapWithPipelines(output, pipelines...)
 	}
+
+	//step 2.4.5  采用Plugin方式创建Output， 如 serverless
 	if c, ok := pluginSpecs[conf.Type]; ok {
 		output, err := c.constructor(conf.Plugin, mgr, log, stats)
 		if err != nil {

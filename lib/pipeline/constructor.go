@@ -66,6 +66,8 @@ func New(
 	processorCtors ...types.ProcessorConstructorFunc,
 ) (Type, error) {
 	procs := 0
+
+	//step 2.3.1 创建所有的processor component，并组装成pipeline NewProcessor
 	procCtor := func(i *int) (types.Pipeline, error) {
 		processors := make([]types.Processor, len(conf.Processors)+len(processorCtors))
 		for j, procConf := range conf.Processors {
@@ -86,9 +88,13 @@ func New(
 		}
 		return NewProcessor(log, stats, processors...), nil
 	}
+
+	//step 2.3.2 单线程模式，直接返回一个NewProcessor实例
 	if conf.Threads == 1 {
 		return procCtor(&procs)
 	}
+
+	//step 2.3.3 多线程模式，采用NewPool封装多个NewProcessor实例，并行执行
 	return NewPool(procCtor, conf.Threads, log, stats)
 }
 

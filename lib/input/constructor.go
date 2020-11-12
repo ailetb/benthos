@@ -344,6 +344,15 @@ func newHasBatchProcessor(
 	stats metrics.Type,
 	pipelines ...types.PipelineConstructorFunc,
 ) (Type, error) {
+
+	//step 2.1.1 创建input维度的pipelines processor
+	/*input:
+	redis_streams:
+	url: tcp://localhost:6379
+	processors:
+		- bloblang: |
+			root.document = this.without("links")
+			root.link_count = this.links.length()*/
 	if len(conf.Processors) > 0 {
 		// TODO: V4 Remove this.
 		for _, procConf := range conf.Processors {
@@ -370,11 +379,27 @@ func newHasBatchProcessor(
 			return pipeline.NewProcessor(log, stats, processors...), nil
 		}}, pipelines...)
 	}
+
 	if c, ok := Constructors[conf.Type]; ok {
 		// TODO: V4 Remove this.
 		if c.brokerConstructorHasBatchProcessor != nil {
 			return c.brokerConstructorHasBatchProcessor(hasBatchProc, conf, mgr, log, stats, pipelines...)
 		}
+
+		//step 2.1.2 创建broker类型input，聚合多个input
+		/*
+			 input:
+				broker:
+				inputs:
+					- file:
+						paths:
+							- /benthos/input-csv.log
+						codec:  lines
+					- dynamic:
+						inputs: {}
+						prefix: ""
+						timeout: 5s
+		*/
 		if c.brokerConstructor != nil {
 			return c.brokerConstructor(conf, mgr, log, stats, pipelines...)
 		}
@@ -384,13 +409,18 @@ func newHasBatchProcessor(
 		if c.constructorHasBatchProcessor != nil {
 			input, err = c.constructorHasBatchProcessor(hasBatchProc, conf, mgr, log, stats)
 		} else {
+			//step 2.1.3 创建常规的input
 			input, err = c.constructor(conf, mgr, log, stats)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to create input '%v': %v", conf.Type, err)
 		}
+
+		//step 2.1.5  使用管道组装input及所有的processor
 		return WrapWithPipelines(input, pipelines...)
 	}
+
+	//step 2.1.6   采用Plugin方式创建Output，如severless
 	if c, ok := pluginSpecs[conf.Type]; ok {
 		input, err := c.constructor(conf.Plugin, mgr, log, stats)
 		if err != nil {

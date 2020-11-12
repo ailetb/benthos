@@ -193,6 +193,8 @@ func newLinesReader(conf ReaderConfig, r io.ReadCloser, ackFn ReaderAckFn) (Read
 }
 
 func (a *linesReader) ack(ctx context.Context, err error) error {
+
+	//step 3.1.7 reader ack
 	a.mut.Lock()
 	a.pending--
 	doAck := a.pending == 0 && a.finished

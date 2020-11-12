@@ -143,6 +143,8 @@ func cmdService(
 		fmt.Printf("Failed to resolve resource glob pattern: %v\n", err)
 		return 1
 	}
+
+	//step 1.1 判断配置格式是否有误，如果strict=ture则直接中断进程
 	lints := readConfig(confPath, resourcesPaths)
 	if strict && len(lints) > 0 {
 		for _, lint := range lints {
@@ -174,7 +176,7 @@ func cmdService(
 		}
 	}
 
-	// Create our metrics type.
+	//step 1.2 Create our metrics type.
 	var stats metrics.Type
 	stats, err = metrics.New(conf.Metrics, metrics.OptSetLogger(logger))
 	for err != nil {
@@ -188,7 +190,7 @@ func cmdService(
 		}
 	}()
 
-	// Create our tracer type.
+	//step 1.3 Create our tracer type.
 	var trac tracer.Type
 	if trac, err = tracer.New(conf.Tracer); err != nil {
 		logger.Errorf("Failed to initialise tracer: %v\n", err)
@@ -196,8 +198,10 @@ func cmdService(
 	}
 	defer trac.Close()
 
-	// Create HTTP API with a sanitised service config.
+	//step 1.4 配置清洗，清除未使用的模块配置
 	sanConf, err := conf.Sanitised()
+
+	//step 1.5 创建HttpServer Create HTTP API with a sanitised service config.
 	if err != nil {
 		logger.Warnf("Failed to generate sanitised config: %v\n", err)
 	}
@@ -207,7 +211,7 @@ func cmdService(
 		return 1
 	}
 
-	// Create resource manager.
+	//step 1.6 初始化 resource
 	manager, err := manager.New(conf.Manager, httpServer, logger, stats)
 	if err != nil {
 		logger.Errorf("Failed to create resource: %v\n", err)
@@ -221,7 +225,7 @@ func cmdService(
 	var dataStream stoppableStreams
 	dataStreamClosedChan := make(chan struct{})
 
-	// Create data streams.
+	//step 1.7 使用Streams Mode https://www.benthos.dev/docs/guides/streams_mode/about
 	if streamsMode {
 		streamMgr := strmmgr.New(
 			strmmgr.OptSetAPITimeout(time.Second*5),
@@ -262,6 +266,8 @@ func cmdService(
 		}
 		logger.Infoln("Launching benthos in streams mode, use CTRL+C to close.")
 	} else {
+
+		//step 1.8 处理常规的Stream，包含了 input、buffer、processor、output等核心流程
 		if dataStream, err = stream.New(
 			conf.Config,
 			stream.OptSetLogger(logger),

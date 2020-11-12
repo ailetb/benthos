@@ -88,6 +88,7 @@ func (w *LineWriter) loop() {
 		var ts types.Transaction
 		var open bool
 		select {
+		//step 3.4.2 监听并获取由processor产生的消息
 		case ts, open = <-w.transactions:
 			if !open {
 				return
@@ -100,6 +101,7 @@ func (w *LineWriter) loop() {
 		w.log.Tracef("Attempting to write %v messages to '%v'.\n", ts.Payload.Len(), w.typeStr)
 		spans := tracing.CreateChildSpans("output_"+w.typeStr, ts.Payload)
 
+		//step 3.4.3 将消息写入目标文件
 		var err error
 		t0 := time.Now()
 		if ts.Payload.Len() == 1 {
@@ -120,6 +122,7 @@ func (w *LineWriter) loop() {
 			s.Finish()
 		}
 
+		//step 3.4.4 消息处理结束，返回最终的处理结果 (-->step 3.1.5)
 		select {
 		case ts.ResponseChan <- response.NewError(err):
 		case <-w.closeChan:
@@ -139,6 +142,7 @@ func (w *LineWriter) Consume(ts <-chan types.Transaction) error {
 	if w.transactions != nil {
 		return types.ErrAlreadyStarted
 	}
+	//step 3.4.1 订阅来自ts管道的消息，该消息由processor产生
 	w.transactions = ts
 	go w.loop()
 	return nil
